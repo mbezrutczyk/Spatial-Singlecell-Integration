@@ -1,0 +1,559 @@
+---
+title: "Visium_Medicago_Rhizophagus_workbook"
+author: Karen Serrano
+output: html_notebook
+---
+
+
+
+```{r}
+#This script will be a blend of the Seurat Spatial Tutorial and some ad hoc code specific to working with M. truncatula and R.irregularis.
+#https://satijalab.org/seurat/articles/spatial_vignette.html
+#https://satijalab.org/seurat/articles/pbmc3k_tutorial.html#standard-pre-processing-workflow-1
+
+#First, load the libraries needed for this analysis.
+library(Seurat)
+library(SeuratData)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(here)
+library(tidyverse)
+
+#load data for each capture area separately
+#each capture area here is labelled as "A1", "B1", and so on
+#here() is the top directory for this Project
+#Also making plot 1, a volcano plot of UMIs counts per spot
+#plot 2 overlays this info onto the tissue image
+
+##A1
+A1dataDir<-here("matrix_files/V11Y10-339/A1")
+
+A1<-Load10X_Spatial(data.dir = A1dataDir, assay='Spatial', filename = "filtered_feature_bc_matrix.h5")
+A1@meta.data['Section_ID'] = 'A1'
+plot1 <- VlnPlot(A1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(A1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+##B1
+B1dataDir<-here("matrix_files/V11Y10-339/B1")
+B1<-Load10X_Spatial(data.dir = B1dataDir, assay='Spatial', filename = "filtered_feature_bc_matrix.h5")
+B1@meta.data['Section_ID'] = 'B1'
+plot1 <- VlnPlot(B1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(B1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+##C1
+C1dataDir<-here("matrix_files/V11Y10-339/C1")
+C1<-Load10X_Spatial(data.dir =C1dataDir, assay='Spatial', filename = "filtered_feature_bc_matrix.h5")
+C1@meta.data['Section_ID'] = 'C1'
+plot1 <- VlnPlot(C1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(C1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+##D1
+D1dataDir<-here("matrix_files/V11Y10-339/D1")
+D1<-Load10X_Spatial(data.dir = D1dataDir, assay='Spatial', filename = "filtered_feature_bc_matrix.h5")
+D1@meta.data['Section_ID'] = 'D1'
+plot1 <- VlnPlot(D1, features = "nCount_Spatial", pt.size = 0.1) + NoLegend()
+plot2 <- SpatialFeaturePlot(D1, features = "nCount_Spatial") + theme(legend.position = "right")
+wrap_plots(plot1, plot2)
+
+```
+
+```{r}
+
+#Let's take a look at UMI and Feature counts prior to any filtering/normalization
+VlnPlot(A1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(B1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(C1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(D1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+
+#plotting counts and features onto the tissue sections
+SpatialFeaturePlot(A1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(B1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(C1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(D1, features = c("nCount_Spatial", "nFeature_Spatial"))
+
+```
+
+
+```{r}
+#We need to filter outliers out.
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+
+plot1 <- FeatureScatter(A1, feature1 = "nCount_Spatial", feature2 = "nFeature_Spatial") + NoLegend()
+plot2 <- FeatureScatter(B1, feature1 = "nCount_Spatial", feature2 = "nFeature_Spatial") + NoLegend()
+plot3 <- FeatureScatter(C1, feature1 = "nCount_Spatial", feature2 = "nFeature_Spatial") + NoLegend()
+plot4 <- FeatureScatter(D1, feature1 = "nCount_Spatial", feature2 = "nFeature_Spatial") + NoLegend()
+plot1 + plot2 + plot3 + plot4
+
+#let's filter out some of the outliers, this may be different depending on capture area
+#Because there are so many ribosomal genes in this top list, I am setting more stringent filtering cut-offs than usual
+#filtering anything above nFeature_Spatial of 3000 for A1,C1,D1 and 2000 for B1.
+A1 <- subset(A1, subset = nFeature_Spatial > 100 & nFeature_Spatial < 3000)
+B1 <- subset(B1, subset = nFeature_Spatial > 100 & nFeature_Spatial < 2000)
+C1 <- subset(C1, subset = nFeature_Spatial > 100 & nFeature_Spatial < 3000)
+D1 <- subset(D1, subset = nFeature_Spatial> 100 & nFeature_Spatial< 3000)
+
+```
+
+```{r}
+#We need to filter out Ribosomal genes prior to continuing the analysis at this point, 
+#This may not be the best way, because it leaves rRNA from R. irregularis, and also completely removes all rRNA, which may not be great for specific analyses.
+# Filter ribosomal
+A1 <- A1[!grepl("rRNA", rownames(A1)), ]
+B1 <- B1[!grepl("rRNA", rownames(B1)), ]
+C1 <- C1[!grepl("rRNA", rownames(C1)), ]
+D1 <- D1[!grepl("rRNA", rownames(D1)), ]
+
+#Now we need to normalize the data. The recommended method here is to use SCTransform (Hafemeister and Satija, Genome Biology 2019), 
+#which builds regularized negative binomial models of gene expression in order to account for technical artifacts while preserving biological variance. 
+#SCTransform normalizes the data, detects high-variance features, and stores the data in the SCT assay. No need to scale before clustering when using.
+A1 <- SCTransform(A1, assay = "Spatial", verbose = FALSE)
+B1 <- SCTransform(B1, assay = "Spatial", verbose = FALSE)
+C1 <- SCTransform(C1, assay = "Spatial", verbose = FALSE)
+D1 <- SCTransform(D1, assay = "Spatial", verbose = FALSE)
+
+#Now let's take another look at the UMI and Feature counts to see the changes after normalization.
+VlnPlot(A1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(B1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(C1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+VlnPlot(D1, features = c("nCount_Spatial", "nFeature_Spatial"), pt.size = 0.1, ncol = 2) + NoLegend()
+SpatialFeaturePlot(A1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(B1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(C1, features = c("nCount_Spatial", "nFeature_Spatial"))
+SpatialFeaturePlot(D1, features = c("nCount_Spatial", "nFeature_Spatial"))
+```
+
+```{r}
+#Now we can perform dimensionality reduction and clustering for each capture area.
+A1 <- RunPCA(A1, assay = "SCT", verbose = FALSE)
+B1 <- RunPCA(B1, assay = "SCT", verbose = FALSE)
+C1 <- RunPCA(C1, assay = "SCT", verbose = FALSE)
+D1 <- RunPCA(D1, assay = "SCT", verbose = FALSE)
+
+#To overcome the extensive technical noise in any single feature for scRNA-seq data, Seurat clusters cells based on their PCA scores, 
+#with each PC essentially representing a ‘metafeature’ that combines information across a correlated feature set. 
+#The top principal components therefore represent a robust compression of the dataset. 
+#However, how many components should we choose to include? 10? 20? 100?
+#An alternative heuristic method generates an ‘Elbow plot’: a ranking of principle components based on the percentage of variance explained by each one (ElbowPlot() function). 
+#In this example, we can observe an ‘elbow’ around PC9-10, suggesting that the majority of true signal is captured in the first 10 PCs.
+#We advise users to err on the higher side when choosing this parameter. 
+#For example, performing downstream analyses with only 5 PCs does significantly and adversely affect results.
+ElbowPlot(A1)
+ElbowPlot(B1)
+ElbowPlot(C1)
+ElbowPlot(D1)
+```
+
+
+```{r}
+#As in PhenoGraph, we first construct a KNN graph based on the euclidean distance in PCA space, 
+#and refine the edge weights between any two cells based on the shared overlap in their local neighborhoods (Jaccard similarity). 
+#This step is performed using the FindNeighbors() function, and takes as input the previously defined dimensionality of the dataset (first 10 PCs).
+A1 <- FindNeighbors(A1, reduction = "pca", dims = 1:7)
+A1 <- FindClusters(A1, verbose = FALSE)
+A1 <- RunUMAP(A1, reduction = "pca", dims = 1:7)
+B1 <- FindNeighbors(B1, reduction = "pca", dims = 1:8)
+B1 <- FindClusters(B1, verbose = FALSE)
+B1 <- RunUMAP(B1, reduction = "pca", dims = 1:8)
+C1 <- FindNeighbors(C1, reduction = "pca", dims = 1:8)
+C1 <- FindClusters(C1, verbose = FALSE)
+C1 <- RunUMAP(C1, reduction = "pca", dims = 1:8)
+D1 <- FindNeighbors(D1, reduction = "pca", dims = 1:9)
+D1 <- FindClusters(D1, verbose = FALSE)
+D1 <- RunUMAP(D1, reduction = "pca", dims = 1:9)
+
+
+#Visualizing clusters and plotting them onto the tissue images.
+#Setting the label parameter places a colored box at the median of each cluster.
+p1 <- DimPlot(A1, reduction = "umap", label = TRUE)
+p2 <- SpatialDimPlot(A1, label = TRUE, label.size = 3)
+p1 + p2
+
+p3 <- DimPlot(B1, reduction = "umap", label = TRUE)
+p4 <- SpatialDimPlot(B1, label = TRUE, label.size = 3)
+p3 + p4
+
+p5 <- DimPlot(C1, reduction = "umap", label = TRUE)
+p6 <- SpatialDimPlot(C1, label = TRUE, label.size = 3)
+p5 + p6
+
+p7 <- DimPlot(D1, reduction = "umap", label = TRUE)
+p8 <- SpatialDimPlot(D1, label = TRUE, label.size = 3)
+p7 + p8
+
+
+```
+
+
+```{r}
+#We can also plot each cluster onto the tissue image individually
+#cells.highlight parameter to demarcate particular cells of interest on a SpatialDimPlot(). 
+#This can be very useful for distinguishing the spatial localization of individual clusters.
+SpatialDimPlot(A1, cells.highlight = CellsByIdentities(object = A1, idents = c(1, 2, 3, 4, 5, 6)), facet.highlight = TRUE, ncol = 3)
+SpatialDimPlot(B1, cells.highlight = CellsByIdentities(object = B1, idents = c(1, 2, 3, 4, 5, 6)), facet.highlight = TRUE, ncol = 3)
+SpatialDimPlot(C1, cells.highlight = CellsByIdentities(object = C1, idents = c(1, 2, 3, 4, 5, 6)), facet.highlight = TRUE, ncol = 3)
+SpatialDimPlot(D1, cells.highlight = CellsByIdentities(object = D1, idents = c(1, 2, 3, 4, 5, 6)), facet.highlight = TRUE, ncol = 3)
+
+#You can save the object at this point so that it can easily be loaded back in without having to rerun the computationally intensive steps performed above, 
+#or easily shared with collaborators.
+saveRDS(A1, file = here("data/A1_Slide1.rds"))
+saveRDS(B1, file = here("data/B1_Slide1.rds"))
+saveRDS(C1, file = here("data/C1_Slide1.rds"))
+saveRDS(D1, file = here("data/D1_Slide1.rds"))
+
+#There are also various interactive plots that you can create.
+#Both SpatialDimPlot() and SpatialFeaturePlot() now have an interactive parameter, that when set to TRUE, will open up the Rstudio viewer pane with an interactive Shiny plot. 
+#The example below demonstrates an interactive SpatialDimPlot() in which you can hover over spots and view the cell name and current identity class (analogous to the previous do.hover behavior).
+SpatialDimPlot(A1, interactive = TRUE)
+
+#For SpatialFeaturePlot(), setting interactive to TRUE brings up an interactive pane in which you can adjust the transparency of the spots, 
+#the point size, as well as the Assay and feature being plotted. 
+#After exploring the data, selecting the done button will return the last active plot as a ggplot object.
+#A17-----------MTR-1g028600 is MtPT4.
+SpatialFeaturePlot(A1, features = "A17-----------MTR-1g028600", interactive = TRUE)
+
+#The LinkedDimPlot() function links the UMAP representation to the tissue image representation and allows for interactive selection. 
+#For example, you can select a region in the UMAP plot and the corresponding spots in the image representation will be highlighted.
+LinkedDimPlot(A1)
+
+
+```
+
+
+```{r}
+#Let's look at a list of the most highly expressed genes within each capture area.
+#A1
+rel_expressionA1 <-
+  Matrix::t(Matrix::t(A1@assays$SCT@counts) /
+            Matrix::colSums(A1@assays$SCT@counts)) * 100
+most_expressedA1 <-
+  sort(Matrix::rowSums(rel_expressionA1), TRUE) / ncol(A1)
+
+# Plot the relative expression of each gene per cell A1
+par(mfrow = c(1, 3),
+    mar   = c(4, 12, 1, 1))
+boxplot(as.matrix(Matrix::t(rel_expressionA1[names(most_expressedA1[30:1]), ])),
+        cex        = .1,
+        las        = 1,
+        xlab       = "% total count per cell",
+        col        = scales::hue_pal()(90)[90:1],
+        horizontal = TRUE,
+        ylim       = c(0, 20))
+        
+        
+#Let's look at a list of the most highly expressed genes within each capture area.
+rel_expressionB1 <-
+  Matrix::t(Matrix::t(B1@assays$SCT@counts) /
+            Matrix::colSums(B1@assays$SCT@counts)) * 100
+most_expressedB1 <-
+  sort(Matrix::rowSums(rel_expressionB1), TRUE) / ncol(B1)
+
+# Plot the relative expression of each gene per cell B1
+par(mfrow = c(1, 3),
+    mar   = c(4, 12, 1, 1))
+boxplot(as.matrix(Matrix::t(rel_expressionB1[names(most_expressedB1[30:1]), ])),
+        cex        = .1,
+        las        = 1,
+        xlab       = "% total count per cell",
+        col        = scales::hue_pal()(90)[90:1],
+        horizontal = TRUE,
+        ylim       = c(0, 20))
+        
+#Let's look at a list of the most highly expressed genes within each capture area.
+rel_expressionC1 <-
+  Matrix::t(Matrix::t(C1@assays$SCT@counts) /
+            Matrix::colSums(C1@assays$SCT@counts)) * 100
+most_expressedC1 <-
+  sort(Matrix::rowSums(rel_expressionC1), TRUE) / ncol(C1)
+
+# Plot the relative expression of each gene per cell C1
+par(mfrow = c(1, 3),
+    mar   = c(4, 12, 1, 1))
+boxplot(as.matrix(Matrix::t(rel_expressionC1[names(most_expressedC1[30:1]), ])),
+        cex        = .1,
+        las        = 1,
+        xlab       = "% total count per cell",
+        col        = scales::hue_pal()(90)[90:1],
+        horizontal = TRUE,
+        ylim       = c(0, 20))
+        
+#Let's look at a list of the most highly expressed genes within each capture area.
+rel_expressionD1 <-
+  Matrix::t(Matrix::t(D1@assays$SCT@counts) /
+            Matrix::colSums(D1@assays$SCT@counts)) * 100
+most_expressedD1 <-
+  sort(Matrix::rowSums(rel_expressionD1), TRUE) / ncol(D1)
+
+# Plot the relative expression of each gene per cell D1
+par(mfrow = c(1, 3),
+    mar   = c(4, 12, 1, 1))
+boxplot(as.matrix(Matrix::t(rel_expressionD1[names(most_expressedD1[30:1]), ])),
+        cex        = .1,
+        las        = 1,
+        xlab       = "% total count per cell",
+        col        = scales::hue_pal()(90)[90:1],
+        horizontal = TRUE,
+        ylim       = c(0, 20))
+
+```
+
+
+
+
+```{r}
+
+
+
+#This is probably not helpful for our analysis, because we expect adjacent tissues to be like-cell types only across a very small scale. 
+
+#Let's now try to visualize spatially variable features
+#The following method does not rely on pre-annotation of clusters and works even when clustering is not so clearly spatially separated.
+#Implemented in FindSpatiallyVariables(), searches for features exhibiting spatial patterning in the absence of pre-annotation. 
+#The default method (method = 'markvariogram) models spatial transcriptomics data as a mark point process and computes a ‘variogram’, which identifies #genes whose expression level is dependent on their spatial location. 
+#More specifically, this process calculates gamma(r) values measuring the dependence between two spots a certain “r” distance apart. 
+#By default, we use an r-value of ‘5’ in these analyses, and only compute these values for variable genes (where variation is calculated independently of spatial location) to save time.
+A1 <- FindSpatiallyVariableFeatures(A1, assay = "SCT", features = VariableFeatures(A1)[1:1000],
+    selection.method = "markvariogram")
+
+#Now we visualize the expression of the top 6 features identified by this measure.
+top.featuresA1 <- head(SpatiallyVariableFeatures(A1, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(A1, features = top.features, ncol = 3, alpha = c(0.1, 1))
+
+#We can repeat this for each capture area.
+B1 <- FindSpatiallyVariableFeatures(B1, assay = "SCT", features = VariableFeatures(B1)[1:1000],
+    selection.method = "markvariogram")
+C1 <- FindSpatiallyVariableFeatures(C1, assay = "SCT", features = VariableFeatures(C1)[1:1000],
+    selection.method = "markvariogram")
+D1 <- FindSpatiallyVariableFeatures(D1, assay = "SCT", features = VariableFeatures(D1)[1:1000],
+    selection.method = "markvariogram")
+    
+top.featuresB1 <- head(SpatiallyVariableFeatures(B1, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(B1, features = top.features, ncol = 3, alpha = c(0.1, 1)) 
+
+top.featuresC1 <- head(SpatiallyVariableFeatures(C1, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(C1, features = top.features, ncol = 3, alpha = c(0.1, 1))
+
+top.featuresD1 <- head(SpatiallyVariableFeatures(D1, selection.method = "markvariogram"), 6)
+SpatialFeaturePlot(D1, features = top.features, ncol = 3, alpha = c(0.1, 1))
+
+
+#Let's take a look at the distribution and expression of certain genes of interest,
+#MtGINT1 - A17-----------MTR-1g090920
+#MtPT4 - A17-----------MTR-1g028600
+#MtDELLA1 - A17-----------MTR-3g065980
+#MtSTR2 - A17-----------MTR-5g030910
+#MtAMT1 - A17-----------MTR-7g115050
+#MtRAM1 - A17-----------MTR-7g027190
+
+SpatialFeaturePlot(A1, features = c("A17-----------MTR-1g090920", "A17-----------MTR-1g028600", "A17-----------MTR-7g027190"))
+SpatialFeaturePlot(B1, features = c("A17-----------MTR-1g090920", "A17-----------MTR-1g028600", "A17-----------MTR-7g027190"))
+
+```
+
+
+
+```{r}
+#June 8, 2022 MB: I'm not sure if this is helping much, because slice B1 lost so much tissue that missing mRNAs may affect the normalization of 'good' data in A1. skipping for now, changing the downstream sn/scRNAseq-spatial integration to A1 only, and generalizing it so that you just have to change the object name at the top of the chunk.
+
+
+#Lastly, if these are consecutive sections of the same tissue type, it can make sense to integrate all capture areas.
+#utilize the merge function
+
+Slide1.merge <- merge(A1, B1)
+
+#slices must be merged one at at time, so run these lines sequentially if you want to do the whole slide
+#Slide1.merge <- merge(Slide1.merge, C1)
+#Slide1.merge <- merge(Slide1.merge, D1)
+
+#This then enables joint dimensional reduction and clustering on the underlying RNA expression data.
+DefaultAssay(Slide1.merge) <- "SCT"
+VariableFeatures(Slide1.merge) <- c(VariableFeatures(A1), VariableFeatures(B1)) #, VariableFeatures(C1), VariableFeatures(D1))
+Slide1.merge <- RunPCA(Slide1.merge, verbose = FALSE)
+Slide1.merge <- FindNeighbors(Slide1.merge, dims = 1:30)
+Slide1.merge <- FindClusters(Slide1.merge, verbose = FALSE)
+Slide1.merge <- RunUMAP(Slide1.merge, dims = 1:30)
+
+#Finally, the data can be jointly visualized in a single UMAP plot. 
+#SpatialDimPlot() and SpatialFeaturePlot() will by default plot all slices as columns and groupings/features as rows.
+DimPlot(Slide1.merge, reduction = "umap", group.by = c("ident", "Section_ID"))
+SpatialDimPlot(Slide1.merge)
+SpatialFeaturePlot(Slide1.merge, features = c("A17-----------MTR-1g028600")) #MtPT4
+SpatialFeaturePlot(Slide1.merge, features = c("R.irregularis-RIR-1548030"))
+SpatialFeaturePlot(Slide1.merge, features = c("R.irregularis-RIR-2468470"))
+
+SpatialFeaturePlot(Slide1.merge, features = c("A17-----------MTR-7g045370")) # MtCCD7 strigolactone synth
+SpatialFeaturePlot(Slide1.merge, features = c("A17-----------MTR-8g022270")) #ABC strigolactone transport
+
+```
+
+
+
+```{r}
+#we can integrate with existing single cell data
+#This first round is a transfer of categorical data, in this case: the cluster labels. In the following chunk we will transfer continuous data, or expression values for individual genes/features
+#We first load the data (download available here), pre-process the scRNA-seq reference, and then perform label transfer. 
+#The procedure outputs, for each spot, a probabilistic classification for each of the scRNA-seq derived classes. 
+#We add these predictions as a new assay in the Seurat object.
+Chromium_reference <- readRDS(here("objects/med_timeseries_named_clusters.RDS")) #choose file
+SpatialObject<-A1 #choose object
+
+#Perform label transfer. The procedure outputs, for each spot,
+#a probabilistic classification for each of the scRNA-seq derived classes. 
+#We add these predictions as a new assay in the Seurat object.
+anchors <- FindTransferAnchors(reference = Chromium_reference, query = SpatialObject, normalization.method = "SCT")
+predictions.assay <- TransferData(anchorset = anchors, refdata = Chromium_reference$Cell_Type, prediction.assay = TRUE,
+    weight.reduction = SpatialObject[["pca"]], dims = 1:30)
+SpatialObject[["predictions"]] <- predictions.assay
+
+#Now we get prediction scores for each spot for each class. 
+#Of particular interest in the frontal cortex region are the laminar excitatory neurons. 
+#Here we can distinguish between distinct sequential layers of these neuronal subtypes, for example:
+DefaultAssay(SpatialObject) <- "predictions"
+
+#Based on these prediction scores, we can also predict cell types whose location is spatially restricted.
+#We use the same methods based on marked point processes to define spatially variable features, but use the cell type prediction scores as the “marks” rather than gene expression.
+SpatialObject <- FindSpatiallyVariableFeatures(SpatialObject, assay = "predictions", selection.method = "markvariogram",
+    features = rownames(SpatialObject), r.metric = 5, slot = "data")
+top.clusters <- head(SpatiallyVariableFeatures(SpatialObject), 4)
+
+SpatialPlot(object = SpatialObject, features = "colonized-cortex", alpha =0.3)
+SpatialPlot(object = SpatialObject, features = "cortex")
+SpatialPlot(object = SpatialObject, features = "epidermis")
+SpatialPlot(object = SpatialObject, features = "phloem")
+SpatialPlot(object = SpatialObject, features = "lrp/root tip")
+SpatialPlot(object = SpatialObject, features = "procambium")
+SpatialPlot(object = SpatialObject, features = "unknown", alpha = 0.2)
+
+
+
+
+
+```
+```{r}
+
+#TransferData for continuous data, in this case: expression values for individual genes
+#Note: you must run the FindTransferAnchors function first, but we already did that in the categorical data transfer chunk
+imputation.assay <- TransferData(anchorset = anchors, refdata = GetAssayData(Chromium_reference[['RNA']]),
+    weight.reduction = SpatialObject[["pca"]], dims = 1:30)
+SpatialObject[["imputation"]] <- imputation.assay
+DefaultAssay(SpatialObject) <- "imputation"
+
+#for example, these genes were not detected in the spatial assay, but their location can now be predicted based on concurrently expressed genes in the single cell/single nucleus data
+SpatialPlot(object = SpatialObject, features = "A17-----------MTR-1g090920", alpha =0.5) #GINT1
+SpatialPlot(object = SpatialObject, features = "A17-----------MTR-3g107870", alpha =0.5) #ABC transorter
+SpatialPlot(object = SpatialObject, features = "A17-----------MTR-7g062580", alpha =0.5) #monosaccharide ATPase
+SpatialPlot(object = SpatialObject, features = "A17-----------MTR-1g050525", alpha =0.5) #LRR domain
+
+```
+
+
+
+```{r}
+
+#to prepare plots for for karen's dark theme presentation
+
+#function to make the plots in the chunk below
+get_reduction <-function(sobj, reduction_name) {
+  rd<-Embeddings(sobj,reduction=reduction_name) %>%
+    as_tibble(rownames="Cell")
+}
+
+get_cell_data <-function(sobj, features=NULL, melt=TRUE) {
+  md<-as_tibble(sobj@meta.data, rownames="Cell")
+  reducs <-names(sobj@reductions)
+  rd <-map(reducs,get_reduction, sobj=sobj) %>% reduce(left_join)
+  combined_data <-left_join(md, rd)
+    if(!is.null(features)) {
+    exp_data <- GetAssayData(sobj[features,], slot = "counts", assay = "RNA") %>% 
+      Matrix::t() %>% 
+      as_tibble(rownames = "Cell")
+    if(melt) {
+      exp_data <- gather(exp_data, "Locus", "Counts", -Cell)
+    }
+    combined_data <- left_join(combined_data, exp_data)
+  }
+  return(combined_data)
+}
+
+library(tidyverse)
+
+
+#umap plots
+tiff("UMAPdark.tiff", units="in", width = 6.5, height = 5, res=300)
+DimPlot(med_timeseries, reduction = "umap",cols= c("royalblue","thistle","dodgerblue4","darkmagenta","lightsteelblue2","palevioletred", "skyblue1","dodgerblue"), label = FALSE, pt.size = 0.2) +NoLegend()+DarkTheme(legend.position='none')
+dev.off()
+
+sobj <- med_timeseries
+features <- c("A17-----------MTR-1g090920")
+cell_data <- get_cell_data(sobj, features = features)
+ggplot(arrange(cell_data, Counts), aes(x = UMAP_1, y = UMAP_2)) +
+  geom_point(size=0.5,aes(color = log1p(Counts))) +
+  scale_color_viridis_c(name = "Log(Counts + 1)", option = "plasma") +
+  labs(x = "UMAP 1", y = "UMAP 2") +
+  facet_wrap("Locus") +
+  DarkTheme()+
+  theme(panel.grid = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+ggsave("Gint1.png", width = 6.5, height = 5) 
+
+sobj <- med_timeseries
+features <- c("A17-----------MTR-3g107870")
+cell_data <- get_cell_data(sobj, features = features)
+ggplot(arrange(cell_data, Counts), aes(x = UMAP_1, y = UMAP_2)) +
+  geom_point(size=0.5,aes(color = log1p(Counts))) +
+  scale_color_viridis_c(name = "Log(Counts + 1)", option = "plasma") +
+  labs(x = "UMAP 1", y = "UMAP 2") +
+  facet_wrap("Locus") +
+  DarkTheme()+
+  theme(panel.grid = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+ggsave("ABCtransporter.png", width = 6.5, height = 5) 
+
+
+sobj <- med_timeseries
+features <- c("A17-----------MTR-7g062580")
+cell_data <- get_cell_data(sobj, features = features)
+ggplot(arrange(cell_data, Counts), aes(x = UMAP_1, y = UMAP_2)) +
+  geom_point(size=0.5,aes(color = log1p(Counts))) +
+  scale_color_viridis_c(name = "Log(Counts + 1)", option = "plasma") +
+  labs(x = "UMAP 1", y = "UMAP 2") +
+  facet_wrap("Locus") +
+  DarkTheme()+
+  theme(panel.grid = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+ggsave("monosaccharide_ATPase.png", width = 6.5, height = 5) 
+
+sobj <- med_timeseries
+features <- c("A17-----------MTR-1g050525")
+cell_data <- get_cell_data(sobj, features = features)
+ggplot(arrange(cell_data, Counts), aes(x = UMAP_1, y = UMAP_2)) +
+  geom_point(size=0.5,aes(color = log1p(Counts))) +
+  scale_color_viridis_c(name = "Log(Counts + 1)", option = "plasma") +
+  labs(x = "UMAP 1", y = "UMAP 2") +
+  facet_wrap("Locus") +
+  DarkTheme()+
+  theme(panel.grid = element_blank(),
+        axis.line = element_blank(),
+        axis.ticks = element_blank(),
+        axis.text = element_blank())
+
+ggsave("LRR_domain.png", width = 6.5, height = 5) 
+
+
+```
+
+
+
